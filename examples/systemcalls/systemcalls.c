@@ -1,4 +1,10 @@
 #include "systemcalls.h"
+#include <stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -11,13 +17,13 @@ bool do_system(const char *cmd)
 {
 
 /*
- * TODO  add your code here
+ * TODO:
  *  Call the system() function with the command set in the cmd
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
-
-    return true;
+    unsigned int retVal = system(cmd);
+    return (retVal == 0);    
 }
 
 /**
@@ -45,9 +51,6 @@ bool do_exec(int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
 
 /*
  * TODO:
@@ -59,9 +62,36 @@ bool do_exec(int count, ...)
  *
 */
 
-    va_end(args);
+    bool result = false;
+    int wait_status;
+    pid_t pid = fork();
+    if (pid == 0) {
+        // child process part
+        execv(command[0], command);
+        // only reached in error case
+        perror("execv");
+        _exit(127); // common convention: exec failed
+    } else if (pid == -1) {
+        // parent process part with fork failed
+        perror("fork");
+    } else {
+        // parent process part with fork passed
+        wait(&wait_status);
+        if (WIFEXITED(wait_status)) {
+            int exitStatus = WEXITSTATUS(wait_status);
+            if (exitStatus == 0) {
+                result = true;
+            } else {
+                fprintf(stderr, "Child exited with status %d\n", exitStatus);
+            }
 
-    return true;
+        } else {
+            fprintf(stderr,"Wait or the process that was waited for failed");
+        }
+    }
+
+    va_end(args);
+    return result;
 }
 
 /**
@@ -93,7 +123,47 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *
 */
 
-    va_end(args);
+    bool result = false;
+    int wait_status;
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644); 
+    if (fd < 0) { 
+        perror("file open"); 
+        return false; 
+    }
+    pid_t pid = fork();
+    if (pid == 0) {
+        // duplicate the file descriptor for outputfile we got from parent into stdout
+        if (dup2(fd, 1) < 0) {
+            perror("dup2"); 
+            _exit(127); 
+        } 
+        close(fd); // this closes the outputfile filedescriptor 
+        // child process part
+        execv(command[0], command);
+        // only reached in error case
+        perror("execv");
+        _exit(127); // common convention: exec failed
+    } else if (pid == -1) {
+        // parent process part with fork failed
+        perror("fork");
+    } else {
+        // parent process part with fork passed
+        wait(&wait_status);
+        close(fd);
+        if (WIFEXITED(wait_status)) {
+            int exitStatus = WEXITSTATUS(wait_status);
+            if (exitStatus == 0) {
+                result = true;
+            } else {
+                fprintf(stderr, "Child exited with status %d\n", exitStatus);
+            }
 
-    return true;
+        } else {
+            fprintf(stderr,"Wait or the process that was waited for failed");
+        }
+    }
+
+    va_end(args);
+    return result;
+
 }

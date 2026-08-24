@@ -50,8 +50,9 @@ then
 	fi
 fi
 #echo "Removing the old writer utility and compiling as a native application"
-make clean
-make
+# commented below make steps for assignement 3/1
+#make clean
+#make
 
 for i in $( seq 1 $NUMFILES)
 do
