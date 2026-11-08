@@ -31,18 +31,20 @@ struct aesd_buffer_entry *aesd_circular_buffer_find_entry_offset_for_fpos(struct
 {
     uint8_t index = buffer->out_offs;
     size_t current_offset = 0;
+    int i;
+    struct aesd_buffer_entry *entry;
 
     if (buffer == NULL || entry_offset_byte_rtn == NULL) {
         return NULL;
     }
 
-    for (int i = 0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++) {
+    for (i = 0; i < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; i++) {
         if (!buffer->full && index == buffer->in_offs) {
             break;
         }
 
-        struct aesd_buffer_entry *entry = &buffer->entry[index];
-g
+        entry = &buffer->entry[index];
+
         if (char_offset < current_offset + entry->size) {
             *entry_offset_byte_rtn = char_offset - current_offset;
             return entry;
