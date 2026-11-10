@@ -56,11 +56,41 @@ int aesd_release(struct inode *inode, struct file *filp)
 ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
+    /* open() stores the device pointer here so every file operation can find it. */
+    struct aesd_dev *dev = filp->private_data;
+    struct aesd_buffer_entry *read_entry;
+    size_t entry_offset_byte_rtn;
+    unsigned long bytes_not_copied;
     ssize_t retval = 0;
-    PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
-    /**
-     * TODO: handle read
-     */
+
+    if (mutex_lock_interruptible(&dev->lock)) {
+        return -ERESTARTSYS;
+    }
+    read_entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->circular_buffer, *f_pos, &entry_offset_byte_rtn);
+    if (read_entry == NULL) {
+        goto unlock;
+    }
+    /* return only one entry even the request is larger */
+    if (count > read_entry->size - entry_offset_byte_rtn) {
+        retval = read_entry->size - entry_offset_byte_rtn;
+    } else {
+        retval = count;
+    }
+    bytes_not_copied = copy_to_user(buf, read_entry->buffptr + entry_offset_byte_rtn, retval);
+    if (bytes_not_copied) {
+        if (retval > (ssize_t)bytes_not_copied) {
+            retval -= bytes_not_copied;
+        } else {
+            retval = -EFAULT;
+            goto unlock;
+        }
+    }
+    *f_pos += retval;
+
+    PDEBUG("read %zd bytes with offset %lld",retval,*f_pos);
+
+unlock:
+    mutex_unlock(&dev->lock);
     return retval;
 }
 
@@ -269,6 +299,7 @@ void aesd_cleanup_module(void)
 {
     dev_t devno = MKDEV(aesd_major, aesd_minor);
     uint8_t index;
+    struct aesd_buffer_entry *entry;
 
     cdev_del(&aesd_device.cdev);
 
@@ -282,8 +313,9 @@ void aesd_cleanup_module(void)
     /* Entries own their data buffers. Empty slots contain NULL pointers, for
      * which kfree is safe, so this also handles a partially filled buffer.
      */
-    for (index = 0; index < AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED; index++)
-        kfree((void *)aesd_device.circular_buffer.entry[index].buffptr);
+    AESD_CIRCULAR_BUFFER_FOREACH(entry, &aesd_device.circular_buffer, index) {
+        kfree((void *)entry->buffptr);
+    }
 
     unregister_chrdev_region(devno, 1);
 }
