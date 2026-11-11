@@ -182,6 +182,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
         /* Allocate the next accumulator before modifying the circular buffer.
          * If this allocation fails, the current partial line remains intact.
          */
+        const char *removedBuffer;
         PDEBUG("write: complete line, adding to circular buffer");
         new_working = kmalloc(sizeof(*new_working), GFP_KERNEL);
         if (!new_working)
@@ -191,18 +192,14 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 
         new_entry.buffptr = new_buffer;
         new_entry.size = new_size;
-        /* When full, in_offs identifies the slot that add_entry will replace.
-         * Free that slot's owned data before overwriting its pointer.
-         */
-        if (dev->circular_buffer.full)
-            kfree((void *)dev->circular_buffer
-                      .entry[dev->circular_buffer.in_offs].buffptr);
         /* The circular buffer copies the entry descriptor. The allocated
          * contents remain owned by that slot until it is evicted or cleaned up.
+         * It returns the pointer to removed data buffer if circular buffer is full for freeing memory 
          */
-        /* TODO: Implement freeing an abandoned entry, this will be passed by the function as return value,
-        otherwise it will return NULL. This is not implemented in the function itself */
-        aesd_circular_buffer_add_entry(&dev->circular_buffer, &new_entry);
+        removedBuffer = aesd_circular_buffer_add_entry(&dev->circular_buffer, &new_entry);
+        if (removedBuffer) {
+            kfree((void *)removedBuffer);
+        }
         /* The old accumulator is no longer needed: its contents are now owned
          * by the circular buffer through new_entry.
          */
